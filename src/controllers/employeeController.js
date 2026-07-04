@@ -30,11 +30,11 @@ function escapeCsv(value)
   return `"${text.replace(/"/g, '""')}"`;
 }
 
-function downloadEmployeesCsv(req, res)
+async function downloadEmployeesCsv(req, res)
 {
   try
   {
-    const employees = employeeService.exportEmployees(req.query);
+    const employees = await employeeService.exportEmployees(req.query);
     const rows = [
       ['S/N', ...EXPORT_COLUMNS.map(([heading]) => heading)].map(escapeCsv).join(','),
       ...employees.map((employee, index) =>
@@ -60,11 +60,11 @@ function downloadEmployeesCsv(req, res)
   }
 }
 
-function downloadEmployeesPdf(req, res)
+async function downloadEmployeesPdf(req, res)
 {
   try
   {
-    const employees = employeeService.exportEmployees(req.query);
+    const employees = await employeeService.exportEmployees(req.query);
     const document = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 32 });
 
     res.set({
@@ -76,7 +76,7 @@ function downloadEmployeesPdf(req, res)
     document.fontSize(18).text('Employee Directory');
     document.moveDown(0.25);
     document.fontSize(9).fillColor('#555555')
-      .text(`${employees.length} employee${employees.length === 1 ? '' : 's'} • Generated ${new Date().toLocaleString()}`);
+      .text(`${employees.length} employee${employees.length === 1 ? '' : 's'} - Generated ${new Date().toLocaleString()}`);
     document.moveDown();
 
     const columns = [
@@ -146,11 +146,11 @@ function downloadEmployeesPdf(req, res)
   }
 }
 
-function listEmployees(req, res)
+async function listEmployees(req, res)
 {
   try
   {
-    const result = employeeService.listEmployees(req.query);
+    const result = await employeeService.listEmployees(req.query);
 
     res.set('X-Total-Count', result.totalFiltered.toString());
     res.set('Access-Control-Expose-Headers', 'X-Total-Count');
@@ -172,11 +172,11 @@ function listEmployees(req, res)
   }
 }
 
-function getEmployeeStats(req, res)
+async function getEmployeeStats(req, res)
 {
   try
   {
-    const stats = employeeService.getEmployeeStats();
+    const stats = await employeeService.getEmployeeStats();
     return res.json(stats);
   }
   catch (error)
@@ -186,11 +186,11 @@ function getEmployeeStats(req, res)
   }
 }
 
-function exportEmployees(req, res)
+async function exportEmployees(req, res)
 {
   try
   {
-    const employees = employeeService.exportEmployees(req.query);
+    const employees = await employeeService.exportEmployees(req.query);
     return res.json(employees);
   }
   catch (error)
@@ -200,12 +200,12 @@ function exportEmployees(req, res)
   }
 }
 
-function getEmployeeById(req, res)
+async function getEmployeeById(req, res)
 {
   try
   {
     const id = parseInt(req.params.id);
-    const employee = employeeService.getEmployeeById(id);
+    const employee = await employeeService.getEmployeeById(id);
 
     if (!employee)
     {
@@ -221,11 +221,11 @@ function getEmployeeById(req, res)
   }
 }
 
-function createEmployee(req, res)
+async function createEmployee(req, res)
 {
   try
   {
-    const newEmployee = employeeService.createEmployee(req.body);
+    const newEmployee = await employeeService.createEmployee(req.body);
     return res.status(201).json(newEmployee);
   }
   catch (error)
@@ -235,12 +235,12 @@ function createEmployee(req, res)
   }
 }
 
-function updateEmployee(req, res)
+async function updateEmployee(req, res)
 {
   try
   {
     const id = parseInt(req.params.id);
-    const updatedEmployee = employeeService.updateEmployee(id, req.body);
+    const updatedEmployee = await employeeService.updateEmployee(id, req.body);
 
     if (!updatedEmployee)
     {
@@ -256,12 +256,12 @@ function updateEmployee(req, res)
   }
 }
 
-function deleteEmployee(req, res)
+async function deleteEmployee(req, res)
 {
   try
   {
     const id = parseInt(req.params.id);
-    const deleted = employeeService.deleteEmployee(id);
+    const deleted = await employeeService.deleteEmployee(id);
 
     if (!deleted)
     {
@@ -277,7 +277,7 @@ function deleteEmployee(req, res)
   }
 }
 
-function bulkDelete(req, res)
+async function bulkDelete(req, res)
 {
   try
   {
@@ -288,7 +288,7 @@ function bulkDelete(req, res)
       return res.status(400).json({ error: 'Invalid request. Expected { ids: [...] }' });
     }
 
-    const deletedCount = employeeService.bulkDelete(ids);
+    const deletedCount = await employeeService.bulkDelete(ids);
     return res.json({ message: `${deletedCount} employee(s) deleted successfully` });
   }
   catch (error)

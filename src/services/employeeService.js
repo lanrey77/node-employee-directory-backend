@@ -1,277 +1,236 @@
-const fs = require('fs');
-const path = require('path');
+const database = require('../database');
 
-const DATA_FILE = path.join(__dirname, '..', '..', 'data', 'employees.json');
+/*
+ * Legacy JSON and SQLite implementations are retained as commented references.
+ *
+ * JSON used fs.readFileSync()/fs.writeFileSync() against data/employees.json.
+ * SQLite used better-sqlite3 and synchronous database.prepare(...).all/get/run.
+ * The complete retired SQLite connection/schema is in src/database.js.
+ */
 
-function readEmployees()
+const EMPLOYEE_FIELDS = [
+  'firstName', 'lastName', 'email', 'phone', 'department', 'designation',
+  'salary', 'joinDate', 'status', 'location', 'managerId', 'avatar'
+];
+const SORTABLE_FIELDS = new Set(['id', ...EMPLOYEE_FIELDS]);
+const COLUMN = Object.fromEntries(
+  ['id', ...EMPLOYEE_FIELDS].map(field => [field, `"${field}"`])
+);
+
+function buildWhereClause(query)
 {
-  const data = fs.readFileSync(DATA_FILE, 'utf-8');
-  return JSON.parse(data);
-}
-
-function writeEmployees(employees)
-{
-  fs.writeFileSync(DATA_FILE, JSON.stringify(employees, null, 2));
-}
-
-function filterEmployees(employees, query)
-{
-  let filtered = [...employees];
+  const conditions = [];
+  const parameters = [];
+  const add = value =>
+  {
+    parameters.push(value);
+    return `$${parameters.length}`;
+  };
 
   if (query.q)
   {
-    const searchTerm = query.q.toLowerCase();
-    filtered = filtered.filter(emp =>
-      emp.firstName.toLowerCase().includes(searchTerm) ||
-      emp.lastName.toLowerCase().includes(searchTerm) ||
-      emp.email.toLowerCase().includes(searchTerm) ||
-      emp.department.toLowerCase().includes(searchTerm) ||
-      emp.designation.toLowerCase().includes(searchTerm) ||
-      emp.location.toLowerCase().includes(searchTerm)
-    );
+    const placeholder = add(`%${String(query.q).toLowerCase()}%`);
+    conditions.push(`(
+      LOWER("firstName") LIKE ${placeholder} OR LOWER("lastName") LIKE ${placeholder} OR
+      LOWER(email) LIKE ${placeholder} OR LOWER(department) LIKE ${placeholder} OR
+      LOWER(designation) LIKE ${placeholder} OR LOWER(location) LIKE ${placeholder}
+    )`);
   }
 
-  if (query.department)
+  for (const field of ['department', 'status', 'location'])
   {
-    filtered = filtered.filter(emp => emp.department === query.department);
-  }
-
-  if (query.status)
-  {
-    filtered = filtered.filter(emp => emp.status === query.status);
-  }
-
-  if (query.location)
-  {
-    filtered = filtered.filter(emp => emp.location === query.location);
+    if (query[field])
+    {
+      conditions.push(`${COLUMN[field]} = ${add(query[field])}`);
+    }
   }
 
   if (query.joinDateFrom)
   {
-    const fromDate = new Date(query.joinDateFrom);
-    filtered = filtered.filter(emp => new Date(emp.joinDate) >= fromDate);
+    conditions.push(`"joinDate" >= ${add(query.joinDateFrom)}`);
   }
-
   if (query.joinDateTo)
   {
-    const toDate = new Date(query.joinDateTo);
-    filtered = filtered.filter(emp => new Date(emp.joinDate) <= toDate);
+    conditions.push(`"joinDate" <= ${add(query.joinDateTo)}`);
   }
-
-  if (query.salaryMin)
+  if (query.salaryMin !== undefined && query.salaryMin !== '')
   {
-    const minSalary = parseFloat(query.salaryMin);
-    filtered = filtered.filter(emp => emp.salary >= minSalary);
+    conditions.push(`salary >= ${add(Number(query.salaryMin))}`);
   }
-
-  if (query.salaryMax)
+  if (query.salaryMax !== undefined && query.salaryMax !== '')
   {
-    const maxSalary = parseFloat(query.salaryMax);
-    filtered = filtered.filter(emp => emp.salary <= maxSalary);
+    conditions.push(`salary <= ${add(Number(query.salaryMax))}`);
   }
 
-  return filtered;
+  return {
+    sql: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+    parameters
+  };
 }
 
-function sortEmployees(employees, query)
+function buildOrderClause(query)
 {
   if (!query._sort)
   {
-    return employees;
+    return 'ORDER BY id ASC';
   }
 
-  const sortFields = query._sort.split(',');
-  const sortOrders = query._order ? query._order.split(',') : [];
-
-  return [...employees].sort((a, b) =>
-  {
-    for (let i = 0; i < sortFields.length; i++)
-    {
-      const field = sortFields[i];
-      const order = sortOrders[i] || 'asc';
-
-      let valueA = a[field];
-      let valueB = b[field];
-
-      if (valueA == null) valueA = '';
-      if (valueB == null) valueB = '';
-
-      if (field === 'joinDate')
-      {
-        valueA = new Date(valueA).getTime();
-        valueB = new Date(valueB).getTime();
-      }
-
-      if (typeof valueA === 'string' && typeof valueB === 'string')
-      {
-        valueA = valueA.toLowerCase();
-        valueB = valueB.toLowerCase();
-      }
-
-      let comparison = 0;
-      if (valueA > valueB) comparison = 1;
-      if (valueA < valueB) comparison = -1;
-
-      if (comparison !== 0)
-      {
-        return order === 'desc' ? -comparison : comparison;
-      }
-    }
-
-    return 0;
-  });
+  const fields = String(query._sort).split(',');
+  const orders = query._order ? String(query._order).split(',') : [];
+  const clauses = fields
+    .filter(field => SORTABLE_FIELDS.has(field))
+    .map((field, index) =>
+      `${COLUMN[field]} ${String(orders[index]).toLowerCase() === 'desc' ? 'DESC' : 'ASC'}`
+    );
+  return clauses.length ? `ORDER BY ${clauses.join(', ')}` : 'ORDER BY id ASC';
 }
 
-function paginateEmployees(employees, query)
+function getPagination(query)
 {
   const requestedPage = Number.parseInt(query.page ?? query._page, 10);
   const requestedLimit = Number.parseInt(query.limit ?? query.pageSize ?? query._limit, 10);
-  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
-    ? Math.min(requestedLimit, 100)
-    : 10;
-  const startIndex = (page - 1) * limit;
-  const endIndex = startIndex + limit;
+  return {
+    page: Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1,
+    limit: Number.isInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 100)
+      : 10
+  };
+}
+
+async function listEmployees(query)
+{
+  const { sql: where, parameters } = buildWhereClause(query);
+  const { page, limit } = getPagination(query);
+  const countResult = await database.query(
+    `SELECT COUNT(*)::integer AS "totalItems" FROM employees ${where}`,
+    parameters
+  );
+  const totalItems = countResult.rows[0].totalItems;
+  const dataResult = await database.query(
+    `SELECT * FROM employees ${where} ${buildOrderClause(query)}
+     LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
+    [...parameters, limit, (page - 1) * limit]
+  );
 
   return {
-    data: employees.slice(startIndex, endIndex),
+    data: dataResult.rows,
     pagination: {
       currentPage: page,
       pageSize: limit,
-      totalItems: employees.length,
-      totalPages: Math.ceil(employees.length / limit)
-    }
-  };
-}
-
-function listEmployees(query)
-{
-  let employees = readEmployees();
-  employees = filterEmployees(employees, query);
-  const totalFiltered = employees.length;
-  employees = sortEmployees(employees, query);
-
-  const result = paginateEmployees(employees, query);
-  return {
-    data: result.data,
-    pagination: result.pagination,
-    totalFiltered
-  };
-}
-
-function getEmployeeStats()
-{
-  const employees = readEmployees();
-
-  const stats = {
-    total: employees.length,
-    byDepartment: {},
-    byStatus: {},
-    byLocation: {},
-    salaryRange: {
-      min: Math.min(...employees.map(e => e.salary)),
-      max: Math.max(...employees.map(e => e.salary))
+      totalItems,
+      totalPages: Math.ceil(totalItems / limit)
     },
+    totalFiltered: totalItems
+  };
+}
+
+async function getEmployeeStats()
+{
+  const totals = (await database.query(`
+    SELECT COUNT(*)::integer AS total, MIN(salary) AS "minSalary",
+      MAX(salary) AS "maxSalary", MIN("joinDate") AS "earliestJoinDate",
+      MAX("joinDate") AS "latestJoinDate"
+    FROM employees
+  `)).rows[0];
+
+  const groupCounts = async field => Object.fromEntries(
+    (await database.query(`
+      SELECT ${COLUMN[field]} AS value, COUNT(*)::integer AS count
+      FROM employees GROUP BY ${COLUMN[field]}
+    `)).rows.map(row => [row.value, row.count])
+  );
+
+  return {
+    total: totals.total,
+    byDepartment: await groupCounts('department'),
+    byStatus: await groupCounts('status'),
+    byLocation: await groupCounts('location'),
+    salaryRange: { min: totals.minSalary, max: totals.maxSalary },
     joinDateRange: {
-      earliest: employees.reduce((min, e) => e.joinDate < min ? e.joinDate : min, employees[0]?.joinDate),
-      latest: employees.reduce((max, e) => e.joinDate > max ? e.joinDate : max, employees[0]?.joinDate)
+      earliest: totals.earliestJoinDate,
+      latest: totals.latestJoinDate
     }
   };
-
-  employees.forEach(emp =>
-  {
-    stats.byDepartment[emp.department] = (stats.byDepartment[emp.department] || 0) + 1;
-    stats.byStatus[emp.status] = (stats.byStatus[emp.status] || 0) + 1;
-    stats.byLocation[emp.location] = (stats.byLocation[emp.location] || 0) + 1;
-  });
-
-  return stats;
 }
 
-function exportEmployees(query)
+async function exportEmployees(query)
 {
-  let employees = readEmployees();
-  employees = filterEmployees(employees, query);
-  employees = sortEmployees(employees, query);
-  return employees;
+  const { sql: where, parameters } = buildWhereClause(query);
+  const result = await database.query(
+    `SELECT * FROM employees ${where} ${buildOrderClause(query)}`,
+    parameters
+  );
+  return result.rows;
 }
 
-function getEmployeeById(id)
+async function getEmployeeById(id)
 {
-  const employees = readEmployees();
-  return employees.find(emp => emp.id === id);
+  const result = await database.query('SELECT * FROM employees WHERE id = $1', [id]);
+  return result.rows[0];
 }
 
-function createEmployee(payload)
+async function createEmployee(payload)
 {
-  const employees = readEmployees();
-
-  const newEmployee = {
-    id: Math.max(...employees.map(e => e.id), 0) + 1,
+  const values = {
     firstName: payload.firstName,
     lastName: payload.lastName,
     email: payload.email,
-    phone: payload.phone,
-    department: payload.department,
-    designation: payload.designation,
-    salary: payload.salary,
+    phone: payload.phone ?? null,
+    department: payload.department ?? null,
+    designation: payload.designation ?? null,
+    salary: payload.salary ?? null,
     joinDate: payload.joinDate || new Date().toISOString().split('T')[0],
     status: payload.status || 'active',
-    location: payload.location,
-    managerId: payload.managerId || null,
+    location: payload.location ?? null,
+    managerId: payload.managerId ?? null,
     avatar: payload.avatar || `https://i.pravatar.cc/150?u=${Date.now()}`
   };
-
-  employees.push(newEmployee);
-  writeEmployees(employees);
-  return newEmployee;
+  const result = await database.query(`
+    INSERT INTO employees (${EMPLOYEE_FIELDS.map(field => COLUMN[field]).join(', ')})
+    VALUES (${EMPLOYEE_FIELDS.map((field, index) => `$${index + 1}`).join(', ')})
+    RETURNING *
+  `, EMPLOYEE_FIELDS.map(field => values[field]));
+  return result.rows[0];
 }
 
-function updateEmployee(id, payload)
+async function updateEmployee(id, payload)
 {
-  const employees = readEmployees();
-  const index = employees.findIndex(emp => emp.id === id);
-
-  if (index === -1)
+  const fields = EMPLOYEE_FIELDS.filter(field =>
+    Object.prototype.hasOwnProperty.call(payload, field)
+  );
+  if (!fields.length)
   {
-    return null;
+    return getEmployeeById(id);
   }
 
-  const updatedEmployee = {
-    ...employees[index],
-    ...payload,
-    id: id
-  };
-
-  employees[index] = updatedEmployee;
-  writeEmployees(employees);
-  return updatedEmployee;
+  const assignments = fields.map((field, index) => `${COLUMN[field]} = $${index + 1}`);
+  const result = await database.query(`
+    UPDATE employees SET ${assignments.join(', ')}
+    WHERE id = $${fields.length + 1}
+    RETURNING *
+  `, [...fields.map(field => payload[field]), id]);
+  return result.rows[0];
 }
 
-function deleteEmployee(id)
+async function deleteEmployee(id)
 {
-  const employees = readEmployees();
-  const index = employees.findIndex(emp => emp.id === id);
+  return (await database.query(
+    'DELETE FROM employees WHERE id = $1 RETURNING id',
+    [id]
+  )).rowCount > 0;
+}
 
-  if (index === -1)
+async function bulkDelete(ids)
+{
+  const numericIds = ids.map(Number).filter(Number.isInteger);
+  if (!numericIds.length)
   {
-    return null;
+    return 0;
   }
-
-  employees.splice(index, 1);
-  writeEmployees(employees);
-  return true;
-}
-
-function bulkDelete(ids)
-{
-  let employees = readEmployees();
-  const initialCount = employees.length;
-
-  employees = employees.filter(emp => !ids.includes(emp.id));
-  writeEmployees(employees);
-
-  return initialCount - employees.length;
+  return (await database.query(
+    'DELETE FROM employees WHERE id = ANY($1::integer[])',
+    [numericIds]
+  )).rowCount;
 }
 
 module.exports = {

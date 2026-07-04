@@ -117,7 +117,13 @@ GET /employees/export/pdf?status=active
 
 ## Data
 
-The server uses `data/employees.json` as a file-based database with 100 employee records.
+The server uses PostgreSQL. Create an `employee_directory` database, copy
+`.env.example` to `.env`, and set your PostgreSQL credentials. The application
+creates the employee table and indexes automatically. On first startup, an empty
+table is seeded from `data/employees.json`.
+
+The retired JSON and SQLite implementations are retained as commented references
+in `src/services/employeeService.js` and `src/database.js`.
 
 Employee fields:
 - id, firstName, lastName, email, phone
