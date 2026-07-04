@@ -1498,5 +1498,20 @@
     "location": "Bangalore",
     "managerId": null,
     "avatar": "https://i.pravatar.cc/150?u=100"
+  },
+  {
+    "id": 101,
+    "firstName": "OLANREWAJU",
+    "lastName": "OMOTAYO",
+    "email": "lanrey77@gmail.com",
+    "phone": "08033891983",
+    "department": "Engineering",
+    "designation": "Manager",
+    "salary": 1234567,
+    "joinDate": "2026-07-04",
+    "status": "active",
+    "location": "London",
+    "managerId": null,
+    "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=1"
   }
 ]
