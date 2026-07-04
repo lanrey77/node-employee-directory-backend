@@ -3,7 +3,7 @@ const cors = require('cors');
 const employeeRoutes = require('./src/routes/employeeRoutes');
 
 const app = express();
-const PORT = 3000;
+const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 
 // Middleware
 app.use(cors());
@@ -59,7 +59,9 @@ app.listen(PORT, () =>
   console.log('Available endpoints:');
   console.log('  GET    /api/employees          - List employees (with filter, sort, pagination)');
   console.log('  GET    /api/employees/stats    - Get statistics');
-  console.log('  GET    /api/employees/export   - Export filtered employees');
+  console.log('  GET    /api/employees/export   - Export filtered employees as JSON');
+  console.log('  GET    /api/employees/export/csv - Download filtered employees as CSV');
+  console.log('  GET    /api/employees/export/pdf - Download filtered employees as PDF');
   console.log('  GET    /api/employees/:id      - Get single employee');
   console.log('  POST   /api/employees          - Create employee');
   console.log('  PUT    /api/employees/:id      - Update employee');
@@ -80,5 +82,5 @@ app.listen(PORT, () =>
   console.log('  ?salaryMax=X       - Filter by salary (max)');
   console.log('  ?_sort=field       - Sort by field (comma-separated for multi-sort)');
   console.log('  ?_order=asc|desc   - Sort order (comma-separated for multi-sort)');
-  console.log('  ?_page=1&_limit=10 - Pagination');
+  console.log('  ?page=1&limit=10   - Pagination (legacy: _page/_limit)');
 });

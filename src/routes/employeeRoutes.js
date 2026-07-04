@@ -4,6 +4,8 @@ const employeeController = require('../controllers/employeeController');
 const router = express.Router();
 
 router.get('/stats', employeeController.getEmployeeStats);
+router.get('/export/csv', employeeController.downloadEmployeesCsv);
+router.get('/export/pdf', employeeController.downloadEmployeesPdf);
 router.get('/export', employeeController.exportEmployees);
 router.get('/', employeeController.listEmployees);
 router.get('/:id', employeeController.getEmployeeById);

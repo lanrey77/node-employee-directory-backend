@@ -29,7 +29,9 @@ Node.js backend server for the Employee Directory Angular project.
 |--------|----------|-------------|
 | GET | /employees | List employees (with filters, sort, pagination) |
 | GET | /employees/stats | Get statistics for filters |
-| GET | /employees/export | Export filtered employees (no pagination) |
+| GET | /employees/export | Export filtered employees as JSON (no pagination) |
+| GET | /employees/export/csv | Download filtered employees as CSV |
+| GET | /employees/export/pdf | Download filtered employees as PDF |
 | GET | /employees/:id | Get single employee |
 | POST | /employees | Create employee |
 | PUT | /employees/:id | Update employee |
@@ -63,14 +65,29 @@ Node.js backend server for the Employee Directory Angular project.
 - `?_sort=department,salary&_order=asc,desc` - Multi-column sort
 
 ### Pagination
-- `?_page=1&_limit=10` - Paginated response
+- `?page=1&limit=10` - Paginated response (defaults to page 1 and 10 rows)
+- `?_page=1&_limit=10` - Legacy aliases are also supported
+
+The maximum page size is 100. Every list response has this shape:
+
+```json
+{
+  "data": [],
+  "pagination": {
+    "currentPage": 1,
+    "pageSize": 10,
+    "totalItems": 100,
+    "totalPages": 10
+  }
+}
+```
 
 Response includes `X-Total-Count` header with total filtered count.
 
 ## Examples
 ```bash
 # Get all employees
-GET /employees
+GET /employees?page=1&limit=10
 
 # Search for "john"
 GET /employees?q=john
@@ -85,13 +102,17 @@ GET /employees?_sort=salary&_order=desc
 GET /employees?_sort=department,salary&_order=asc,desc
 
 # Pagination
-GET /employees?_page=1&_limit=10
+GET /employees?page=1&limit=10
 
 # Combined query
 GET /employees?department=Engineering&_sort=salary&_order=desc&_page=1&_limit=10
 
 # Export all filtered data
 GET /employees/export?department=Engineering&status=active
+
+# Download filtered data
+GET /employees/export/csv?department=Engineering
+GET /employees/export/pdf?status=active
 ```
 
 ## Data

@@ -124,8 +124,12 @@ function sortEmployees(employees, query)
 
 function paginateEmployees(employees, query)
 {
-  const page = parseInt(query._page) || 1;
-  const limit = parseInt(query._limit) || 10;
+  const requestedPage = Number.parseInt(query.page ?? query._page, 10);
+  const requestedLimit = Number.parseInt(query.limit ?? query.pageSize ?? query._limit, 10);
+  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? Math.min(requestedLimit, 100)
+    : 10;
   const startIndex = (page - 1) * limit;
   const endIndex = startIndex + limit;
 
@@ -147,18 +151,10 @@ function listEmployees(query)
   const totalFiltered = employees.length;
   employees = sortEmployees(employees, query);
 
-  if (query._page)
-  {
-    const result = paginateEmployees(employees, query);
-    return {
-      data: result.data,
-      pagination: result.pagination,
-      totalFiltered
-    };
-  }
-
+  const result = paginateEmployees(employees, query);
   return {
-    data: employees,
+    data: result.data,
+    pagination: result.pagination,
     totalFiltered
   };
 }
